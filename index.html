@@ -1,228 +1,32 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="ko">
 <head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>AI 직무 추천 컨설턴트</title>
-  <!-- Tailwind CDN -->
   <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="https://rsms.me/inter/inter.css">
   <style>
-    .input{ @apply w-full border rounded-xl px-3 py-2 outline-none focus:ring-2 focus:ring-blue-500; }
-    .btn{ @apply bg-blue-600 text-white rounded-xl px-4 py-2 hover:bg-blue-700; }
-    .btn-secondary{ @apply bg-gray-200 text-gray-800 rounded-xl px-4 py-2 hover:bg-gray-300; }
-    .json-box{ @apply bg-gray-50 border rounded-xl p-3 min-h-[120px]; }
-    .card{ @apply border rounded-2xl p-4; }
-    .badge{ @apply inline-block text-xs bg-blue-50 text-blue-700 rounded-full px-2 py-1; }
-    .kcol p{ @apply font-medium; }
-    .src a{ @apply text-blue-600 hover:underline text-sm; }
+    body {
+      font-family: 'Inter', sans-serif;
+    }
   </style>
-</head>
-<body class="bg-gray-50 text-gray-900">
-  <header class="max-w-5xl mx-auto px-4 py-6">
-    <h1 class="text-2xl font-bold">AI 직무 추천 컨설턴트</h1>
-    <p class="text-sm text-gray-600 mt-1">전공·학년·학점·관심사 기반 맞춤 추천 ·
-      <span class="font-semibold">모든 추천에 출처 링크(최소 2개) 필수</span></p>
-  </header>
-
-  <main class="max-w-5xl mx-auto px-4 grid md:grid-cols-2 gap-6">
-    <!-- 입력 -->
-    <section class="bg-white rounded-2xl shadow p-5">
-      <h2 class="text-lg font-semibold mb-4">입력</h2>
-      <form id="form" class="space-y-3">
-        <div>
-          <label class="block text-sm font-medium mb-1">대학명 (선택)</label>
-          <input id="univ" placeholder="예: OO대학교" class="input"/>
-        </div>
-        <div>
-          <label class="block text-sm font-medium mb-1">전공</label>
-          <input id="major" required placeholder="예: 컴퓨터공학과" class="input"/>
-        </div>
-        <div>
-          <label class="block text-sm font-medium mb-1">학년</label>
-          <select id="year" class="input">
-            <option>1</option><option>2</option><option>3</option><option>4</option>
-          </select>
-        </div>
-        <div>
-          <label class="block text-sm font-medium mb-1">관심 산업 (선택, 쉼표로 구분)</label>
-          <input id="industry" placeholder="예: IT, 금융, 제조" class="input"/>
-        </div>
-        <div>
-          <label class="block text-sm font-medium mb-1">관심사 (쉼표로 구분)</label>
-          <input id="interests" required placeholder="예: 데이터 분석, AI, 프론트엔드 개발" class="input"/>
-        </div>
-        <div class="flex items-center gap-3 pt-2">
-          <button id="run" class="btn" type="submit">AI 직무 추천 받기</button>
-          <button id="print" class="btn-secondary" type="button">PDF 저장(인쇄)</button>
-        </div>
-        <p class="text-xs text-gray-500 pt-2">
-          개인정보(이름/학번/연락처)는 입력하지 마세요. 교육 실습용입니다.
-        </p>
-      </form>
-    </section>
-
-    <!-- 결과 -->
-    <section class="bg-white rounded-2xl shadow p-5">
-      <div class="flex items-center justify-between">
-        <h2 class="text-lg font-semibold">결과</h2>
-        <button id="copyJson" class="text-sm text-blue-600 hover:underline">JSON 복사</button>
-      </div>
-      <pre id="jsonOut" class="json-box mt-3 whitespace-pre-wrap"></pre>
-      <div id="cards" class="mt-5 space-y-4"></div>
-    </section>
-  </main>
-
-  <footer class="max-w-5xl mx-auto px-4 py-8 text-xs text-gray-500">
-    © 2025 Career Recommender · 교육 실습용 · 출처 없는 정보 생성 금지
-  </footer>
-
-  <script>
-    // ===============================================
-    // ⚠️ 중요: 프록시 URL을 설정하세요.
-    // Netlify/Cloudflare 등 서버리스 프록시의 공개 URL로 교체
-    // 예) const PROXY = 'https://<your-netlify-site>.netlify.app/.netlify/functions/recommend';
-    // 예) const PROXY = 'https://<your-worker-subdomain>.workers.dev';
-    const PROXY = 'YOUR_PROXY_URL_HERE';
-    // ===============================================
-
-    // 시스템 프롬프트 (사실 기반/출처 의무)
-    const SYSTEM_PROMPT = `당신은 한국 대학생을 위한 직무 추천 전문가 AI입니다. 사용자가 입력한 전공, 학년, 학점(선택), 관심사를 기반으로 직무를 분석하고 추천합니다.
-
-[핵심 원칙]
-1) 사실 기반: 근거가 불충분하면 "출처 부족으로 제공 불가"라고 명시합니다.
-2) 각 추천에는 국내 공신력 데이터베이스 링크를 최소 2개 포함합니다.
-   - 고용24: https://www.work24.go.kr/
-   - NCS: https://www.ncs.go.kr/
-   - 한국직업사전: https://www.work.go.kr/consltJobCarpa/srch/jobDic/jobDicSrchByJobCl.do
-   - (보조) O*NET: https://www.onetonline.org/ , WEF: https://www.weforum.org/
-3) 허위/추정 정보, 연봉 추정, 기업 내부 규정 등은 생성하지 않습니다.
-
-[가중치 기준]
-- 전공 연관성 45, 관심사 매칭 35, 학년 적합도 10, 학습전략(학점/난이도) 10 (총 100).
-
-[출력 스키마(JSON만 출력)]
+<script type="importmap">
 {
-  "top_jobs": [
-    {
-      "job_family": "string",
-      "ncs_path": "string",
-      "example_roles": ["string","..."],
-      "score": 0-100,
-      "why_match": ["사유 2-4개"],
-      "ksa": {
-        "knowledge": ["K 3-6"],
-        "skills": ["S 3-6"],
-        "attitudes": ["A 3-6"]
-      },
-      "next_steps": ["3개월 계획", "6-12개월 계획"],
-      "sources": [
-        {"title": "출처명", "url": "링크"},
-        {"title": "출처명", "url": "링크"}
-      ]
-    }
-  ],
-  "additional_suggestions": ["보완 요청 등"],
-  "disclaimer": "한계/주의"
-}`;
-
-    const form = document.getElementById('form');
-    const out = document.getElementById('jsonOut');
-    const cards = document.getElementById('cards');
-
-    document.getElementById('print').addEventListener('click', () => window.print());
-    document.getElementById('copyJson').addEventListener('click', async () => {
-      try {
-        await navigator.clipboard.writeText(out.textContent.trim());
-        alert('JSON이 복사되었습니다.');
-      } catch (e) { alert('복사 실패: ' + e.message); }
-    });
-
-    form.addEventListener('submit', async (e) => {
-      e.preventDefault();
-      cards.innerHTML = '';
-      out.textContent = '분석 중...';
-
-      const payload = {
-        university: document.getElementById('univ').value.trim(),
-        major: document.getElementById('major').value.trim(),
-        year: Number(document.getElementById('year').value.trim() || '0'),
-        gpa: null, // 필요시 입력 필드 추가해서 사용
-        interests: document.getElementById('interests').value.split(',').map(s => s.trim()).filter(Boolean),
-        target_industry_optional: (document.getElementById('industry').value || '').split(',').map(s => s.trim()).filter(Boolean)
-      };
-
-      try {
-        if (!PROXY || PROXY.includes('YOUR_PROXY_URL_HERE')) {
-          throw new Error('프록시 URL이 설정되지 않았습니다. 코드 상단 PROXY를 설정하세요.');
-        }
-        const res = await fetch(PROXY, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ system: SYSTEM_PROMPT, user: payload })
-        });
-        if (!res.ok) throw new Error('서버 오류: ' + res.status);
-        const data = await res.json();
-
-        // 모델이 순수 JSON을 반환하는 것을 기대 (프록시에서 강제)
-        out.textContent = JSON.stringify(data, null, 2);
-        renderCards(data);
-        validate(data);
-      } catch (err) {
-        out.textContent = '오류: ' + err.message +
-          '\n서버리스 프록시(Netlify/Cloudflare)가 준비되지 않았을 수 있습니다.';
-      }
-    });
-
-    function renderCards(result){
-      if (!result || !Array.isArray(result.top_jobs)) return;
-      const frag = document.createDocumentFragment();
-      result.top_jobs.forEach(job => {
-        const el = document.createElement('div');
-        el.className = 'card';
-        el.innerHTML = `
-          <div class="flex items-center justify-between">
-            <h3 class="font-semibold text-lg">${esc(job.job_family || '직무군')}</h3>
-            <span class="badge">${job.score ?? '-'}</span>
-          </div>
-          <p class="text-sm text-gray-600 mt-1">${esc(job.ncs_path || '')}</p>
-          <p class="mt-2 text-sm"><strong>예시 역할:</strong> ${(job.example_roles||[]).map(esc).join(', ')}</p>
-          <ul class="list-disc pl-5 mt-2 text-sm">
-            ${(job.why_match||[]).map(x=>`<li>${esc(x)}</li>`).join('')}
-          </ul>
-          <div class="grid md:grid-cols-3 gap-3 mt-3 text-sm kcol">
-            <div><p>K</p><ul class="list-disc pl-5">${(job.ksa?.knowledge||[]).map(x=>`<li>${esc(x)}</li>`).join('')}</ul></div>
-            <div><p>S</p><ul class="list-disc pl-5">${(job.ksa?.skills||[]).map(x=>`<li>${esc(x)}</li>`).join('')}</ul></div>
-            <div><p>A</p><ul class="list-disc pl-5">${(job.ksa?.attitudes||[]).map(x=>`<li>${esc(x)}</li>`).join('')}</ul></div>
-          </div>
-          <div class="mt-3 text-sm">
-            <p class="font-medium">Next steps</p>
-            <ul class="list-disc pl-5">${(job.next_steps||[]).map(x=>`<li>${esc(x)}</li>`).join('')}</ul>
-          </div>
-          <div class="src mt-3">
-            ${(job.sources||[]).map(s=>`<a href="${att(s.url||'#')}" target="_blank" rel="noopener">🔗 ${esc(s.title||s.url||'출처')}</a>`).join('<br/>')}
-          </div>`;
-        frag.appendChild(el);
-      });
-      cards.appendChild(frag);
-    }
-
-    function validate(result){
-      const errs = [];
-      if (!result || !Array.isArray(result.top_jobs) || result.top_jobs.length === 0) {
-        errs.push('top_jobs 항목이 비었습니다.');
-      } else {
-        result.top_jobs.forEach((j, i) => {
-          const sc = (j.sources||[]).filter(s => s && s.url).length;
-          if (sc < 2) errs.push(`추천 #${i+1}: 출처가 2개 미만입니다.`);
-        });
-      }
-      if (errs.length){
-        out.textContent += '\\n\\n⚠ 검증 경고:\\n- ' + errs.join('\\n- ');
-      }
-    }
-
-    function esc(s){ return (''+s).replace(/[&<>\"']/g, m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m])); }
-    function att(s){ return esc(s).replace(/"/g, '&quot;'); }
-  </script>
+  "imports": {
+    "react-dom/": "https://aistudiocdn.com/react-dom@^19.2.0/",
+    "react/": "https://aistudiocdn.com/react@^19.2.0/",
+    "react": "https://aistudiocdn.com/react@^19.2.0",
+    "@google/genai": "https://aistudiocdn.com/@google/genai@^1.25.0",
+    "jspdf": "https://aistudiocdn.com/jspdf@^2.5.1",
+    "html2canvas": "https://aistudiocdn.com/html2canvas@^1.4.1"
+  }
+}
+</script>
+<link rel="stylesheet" href="/index.css">
+</head>
+<body class="bg-slate-50 text-slate-800">
+  <div id="root"></div>
+  <script type="module" src="/index.tsx"></script>
 </body>
 </html>
